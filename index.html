@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tennis Tournament - Compact & Straight Lines</title>
+<title>Tennis Tournament - Smart Compact Grid</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -79,7 +79,7 @@
   }
 
   /* Grid structure */
-  .section-row { display: flex; gap: 70px; /* Space for lines */ }
+  .section-row { display: flex; gap: 70px; }
   .round-col { width: 150px; display: flex; flex-direction: column; gap: 16px; justify-content: space-around; flex-shrink: 0; }
 
   /* ── COMPACT MATCH CARD ── */
@@ -88,7 +88,9 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.4); position: relative; overflow: hidden;
   }
   .match-card.done { border-color: rgba(194,113,79, 0.4); }
-  .match-card.bye-match { opacity: 0.6; pointer-events: none; }
+  
+  /* Скрытие матчей с BYE */
+  .hide-bye-match { display: none !important; }
 
   .match-header {
     background: rgba(0,0,0,0.5); padding: 4px 8px; font-family: 'DM Mono', monospace;
@@ -100,12 +102,11 @@
     padding: 6px 10px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 28px;
   }
   .player-slot:first-of-type { border-bottom: 1px solid var(--line); }
-  .player-slot:hover:not(.waiting):not(.bye-slot):not(.winner):not(.loser) { background: rgba(194,113,79,0.15); }
+  .player-slot:hover:not(.waiting):not(.winner):not(.loser) { background: rgba(194,113,79,0.15); }
   
   .player-slot.winner { background: rgba(76,175,110,0.15); color: var(--win); cursor: default; }
   .player-slot.loser { background: rgba(192,68,68,0.1); color: var(--text-dim); text-decoration: line-through; cursor: default; }
   .player-slot.waiting { color: var(--text-dim); font-style: italic; cursor: default; font-size: 0.75rem; }
-  .player-slot.bye-slot { color: var(--bye); cursor: default; font-family: 'DM Mono', monospace; font-size: 0.7rem; }
   .slot-icon { font-size: 0.65rem; flex-shrink: 0; }
 
   /* ── RESULTS ── */
@@ -157,7 +158,7 @@
 
   <div class="progress-bar-wrap">
     <div class="progress-info">
-      <span id="progressLabel">Матчей сыграно: <span id="progressDone">0</span> / <span id="progressTotal">0</span></span>
+      <span id="progressLabel">Реальных матчей сыграно: <span id="progressDone">0</span> / <span id="progressTotal">0</span></span>
       <span id="progressPct">0%</span>
     </div>
     <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
@@ -181,7 +182,7 @@ let matches = {};
 let finalResults = {};
 let tournamentSize = 0;
 
-/* --- SETUP & GSHEETS (БЕЗ ИЗМЕНЕНИЙ) --- */
+/* --- SETUP & GSHEETS --- */
 const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ_VpcQRhHlQLaODwHAQswseuSwQYDm3d1F1lwlu0OhuGMeIh1JQnaBwUk-8O2Ah7AzkL2ftswIA20Z/pub?gid=1447797969&single=true&output=csv';
 const PROXIES =[ u => `https://corsproxy.io/?${encodeURIComponent(u)}`, u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, u => `https://thingproxy.freeboard.io/fetch/${u}` ];
 
@@ -222,8 +223,26 @@ let matchCounter = 0; function newMatchId() { return 'M' + (++matchCounter); }
 function generateTournament() {
   matchCounter = 0; matches = {}; finalResults = {};
   const size = nextPow2(players.length); tournamentSize = size;
-  const shuffled = [...players].sort(() => Math.random() - 0.5);
-  while (shuffled.length < size) shuffled.push('BYE');
+  
+  const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
+  const R1_matches =[];
+  const doubleMatches = players.length - size / 2; 
+  let pIdx = 0;
+  
+  for (let i = 0; i < size / 2; i++) {
+    if (i < doubleMatches) {
+      R1_matches.push([shuffledPlayers[pIdx++], shuffledPlayers[pIdx++]]);
+    } else {
+      R1_matches.push([shuffledPlayers[pIdx++], 'BYE']);
+    }
+  }
+  
+  R1_matches.sort(() => Math.random() - 0.5);
+  const shuffled =[];
+  R1_matches.forEach(pair => {
+    if (Math.random() > 0.5) { shuffled.push(pair[0], pair[1]); } 
+    else { shuffled.push(pair[1], pair[0]); }
+  });
 
   function createTopology(minPlace, maxPlace, round) {
     if (minPlace === maxPlace) return null; 
@@ -247,19 +266,33 @@ function generateTournament() {
   }
   const round0 = createTopology(1, size, 0);
   for(let i = 0; i < size / 2; i++) { matches[round0[i]].p1 = shuffled[i * 2]; matches[round0[i]].p2 = shuffled[i * 2 + 1]; }
-  processAutoByes(); renderTournament();
+  
+  processAutoByes(); 
+  renderTournament();
 }
 
+// ИСПРАВЛЕНО: Безопасное проталкивание BYE. Игнорирует "Ожидание...".
 function processAutoByes() {
   let changed = true;
   while (changed) {
     changed = false;
     Object.values(matches).forEach(m => {
-      if (m.winner) return;
-      if (m.p1 === 'BYE' || m.p2 === 'BYE') {
-        let winner = (m.p1 === 'BYE' && m.p2 === 'BYE') ? 'BYE' : (m.p1 === 'BYE' ? m.p2 : m.p1);
-        let loser = (m.p1 === 'BYE' && m.p2 === 'BYE') ? 'BYE' : (m.p1 === 'BYE' ? m.p1 : m.p2);
-        resolveMatch(m.id, winner, true); changed = true;
+      if (m.winner) return; // Пропускаем завершенные
+      
+      const hasBye = m.p1 === 'BYE' || m.p2 === 'BYE';
+      const hasWaiting = m.p1 === '?' || m.p2 === '?'; // Есть неопределившийся игрок
+
+      if (hasBye) {
+        if (m.p1 === 'BYE' && m.p2 === 'BYE') {
+          // BYE против BYE -> проходит BYE
+          resolveMatch(m.id, 'BYE', true);
+          changed = true;
+        } else if (!hasWaiting) {
+          // Игрок против BYE (Только если оба известны, и нет "?") -> проходит Игрок
+          let winner = m.p1 === 'BYE' ? m.p2 : m.p1;
+          resolveMatch(m.id, winner, true);
+          changed = true;
+        }
       }
     });
   }
@@ -278,12 +311,18 @@ function resolveMatch(matchId, winner, silent = false) {
   }
 }
 
+// ИСПРАВЛЕНО: Теперь AutoByes вызывается после каждого клика
 function clickPlayer(matchId, slot) {
   const m = matches[matchId]; if (!m || m.winner) { if(m.winner) showToast('Матч завершён'); return; }
   const cName = slot === 1 ? m.p1 : m.p2; const oName = slot === 1 ? m.p2 : m.p1;
   if (cName === '?' || oName === '?') return showToast('⏳ Ожидание игроков');
   if (cName === 'BYE') return;
-  resolveMatch(matchId, cName); renderBracket(); updateProgress();
+  
+  resolveMatch(matchId, cName); 
+  processAutoByes(); // <--- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ. Двигает BYE в реальном времени.
+  
+  renderBracket(); 
+  updateProgress();
 }
 
 /* --- MEGA GRID RENDER --- */
@@ -295,13 +334,12 @@ function renderTournament() {
 
 function renderBracket() {
   const board = document.getElementById('mainBracketBoard');
-  board.innerHTML = ''; // Clear
+  board.innerHTML = ''; 
   const allMatches = Object.values(matches);
   if (allMatches.length === 0) return;
 
   const maxRound = Math.log2(tournamentSize);
   
-  // Find sub-bracket roots
   const isWinnerChild = new Set();
   allMatches.forEach(m => { if (m.nextWinnerId) isWinnerChild.add(m.nextWinnerId); });
   const entryPoints = allMatches.filter(m => !isWinnerChild.has(m.id));
@@ -316,7 +354,7 @@ function renderBracket() {
   const sections =[];
   Object.values(sectionGroups).forEach(startingMatches => {
     const sectionMatchesSet = new Set();
-    let currentLevel = [...startingMatches];
+    let currentLevel =[...startingMatches];
     while(currentLevel.length > 0) {
       const nextLevel =[];
       currentLevel.forEach(m => {
@@ -327,50 +365,54 @@ function renderBracket() {
       });
       currentLevel = nextLevel;
     }
-    sections.push({ matches: Array.from(sectionMatchesSet), minPlace: startingMatches[0].placeRange[0], maxPlace: startingMatches[0].placeRange[1] });
+    const secMatches = Array.from(sectionMatchesSet);
+    
+    // ОТСЕЧЕНИЕ: Рисуем только сетки, где есть шанс реальной игры (не только BYE)
+    const isPlayable = secMatches.some(m => m.p1 !== 'BYE' && m.p2 !== 'BYE');
+    if (isPlayable) {
+      sections.push({ matches: secMatches, minPlace: startingMatches[0].placeRange[0], maxPlace: startingMatches[0].placeRange[1] });
+    }
   });
 
-  // Sort sections from Best places to Worst places (Important so loser lines fall DOWNWARD)
   sections.sort((a, b) => a.minPlace - b.minPlace);
 
-  // Render HTML Grid
   sections.forEach(sec => {
     const secDiv = document.createElement('div'); secDiv.className = 'bracket-section';
-    
     const title = document.createElement('div'); title.className = 'section-title-compact';
     title.textContent = `Матчи за ${sec.minPlace}-${sec.maxPlace} места`;
     secDiv.appendChild(title);
 
     const rowDiv = document.createElement('div'); rowDiv.className = 'section-row';
     
-    // Strict columns mapping to rounds
     for (let r = 0; r < maxRound; r++) {
       const colDiv = document.createElement('div'); colDiv.className = 'round-col';
       const roundMatches = sec.matches.filter(m => m.round === r).sort((a,b) => a.index - b.index);
       
       roundMatches.forEach(m => colDiv.appendChild(buildMatchCard(m)));
-      rowDiv.appendChild(colDiv); // Always append column to preserve the grid spacing
+      rowDiv.appendChild(colDiv); 
     }
     secDiv.appendChild(rowDiv);
     board.appendChild(secDiv);
   });
 
   updateResults();
-  
-  // Draw SVG Connectors after DOM calculates positions
   setTimeout(drawConnectors, 100);
 }
 
 function buildMatchCard(m) {
   const card = document.createElement('div'); card.className = 'match-card'; card.dataset.id = m.id;
-  if (m.winner) card.classList.add('done'); if (m.p1 === 'BYE' || m.p2 === 'BYE') card.classList.add('bye-match');
+  
+  if (m.winner) card.classList.add('done'); 
+  
+  if (m.p1 === 'BYE' || m.p2 === 'BYE') {
+      card.classList.add('hide-bye-match');
+  }
 
   let html = `<div class="match-header"><span class="m-id">${m.id}</span><span>За ${m.placeRange[0]}${m.placeRange[0] !== m.placeRange[1] ? '-'+m.placeRange[1] : ''}</span></div>`;
   [1, 2].forEach(slot => {
     const name = slot === 1 ? m.p1 : m.p2;
-    html += `<div class="player-slot ${name === 'BYE' ? 'bye-slot' : name === '?' ? 'waiting' : m.winner === name ? 'winner' : m.loser === name ? 'loser' : ''}" onclick="clickPlayer('${m.id}', ${slot})">`;
-    if (name === 'BYE') html += `<span class="slot-icon">○</span><span>Bye</span>`;
-    else if (name === '?') html += `<span>Ожидание...</span>`;
+    html += `<div class="player-slot ${name === '?' ? 'waiting' : m.winner === name ? 'winner' : m.loser === name ? 'loser' : ''}" onclick="clickPlayer('${m.id}', ${slot})">`;
+    if (name === '?') html += `<span>Ожидание...</span>`;
     else if (m.winner === name) html += `<span class="slot-icon">✓</span><span>${name}</span>`;
     else html += `<span>${name}</span>`;
     html += `</div>`;
@@ -379,6 +421,22 @@ function buildMatchCard(m) {
 }
 
 /* --- SVG ORTHOGONAL LINES --- */
+// ИСПРАВЛЕНО: Умный поиск цели. Линии будут проходить скрытые матчи насквозь!
+function getNextVisibleTarget(startMatchId, isWinnerPath) {
+  let nextId = isWinnerPath ? matches[startMatchId].nextWinnerId : matches[startMatchId].nextLoserId;
+  while (nextId) {
+    let nextMatch = matches[nextId];
+    if (!nextMatch) return null;
+    // Если матч реален (ни один из слотов не BYE), то мы нашли цель для отрисовки линии
+    if (nextMatch.p1 !== 'BYE' && nextMatch.p2 !== 'BYE') return nextId;
+    
+    // Если матч - пустышка, значит пришедший в него человек автоматически его выиграл. 
+    // Продолжаем искать линию дальше по пути победителя.
+    nextId = nextMatch.nextWinnerId;
+  }
+  return null;
+}
+
 function drawConnectors() {
   const board = document.getElementById('mainBracketBoard');
   if (!board) return;
@@ -401,6 +459,8 @@ function drawConnectors() {
   const elMap = {}; cards.forEach(c => elMap[c.dataset.id] = c);
 
   cards.forEach(card => {
+    if (card.offsetParent === null || card.classList.contains('hide-bye-match')) return;
+
     const m = matches[card.dataset.id];
     if (!m) return;
     
@@ -408,55 +468,42 @@ function drawConnectors() {
     const startX = startRect.right - boardRect.left;
     const startY = startRect.top + startRect.height / 2 - boardRect.top;
 
-    // Line for WINNER (Goes straight right, slightly offset to avoid overlap)
-    if (m.nextWinnerId && elMap[m.nextWinnerId]) {
-      const tRect = elMap[m.nextWinnerId].getBoundingClientRect();
+    // Ищем следующий ВИДИМЫЙ матч победителя
+    const winTargetId = getNextVisibleTarget(m.id, true);
+    if (winTargetId && elMap[winTargetId]) {
+      const tRect = elMap[winTargetId].getBoundingClientRect();
       const endX = tRect.left - boardRect.left;
       const endY = tRect.top + tRect.height / 2 - boardRect.top;
 
-      const midX = startX + 15; // 15px out
+      const midX = startX + 12; 
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute('d', `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`);
-      path.setAttribute('fill', 'transparent');
-      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('fill', 'transparent'); path.setAttribute('stroke-linejoin', 'round');
       
-      if (m.winner) {
-        path.setAttribute('stroke', '#4caf6e'); // Green
-        path.setAttribute('stroke-width', '2.5');
-      } else {
-        path.setAttribute('stroke', '#3a3632'); // Gray
-        path.setAttribute('stroke-width', '1.5');
-        path.setAttribute('stroke-dasharray', '4 4');
-      }
+      if (m.winner) { path.setAttribute('stroke', '#4caf6e'); path.setAttribute('stroke-width', '2.5'); } 
+      else { path.setAttribute('stroke', '#3a3632'); path.setAttribute('stroke-width', '1.5'); path.setAttribute('stroke-dasharray', '4 4'); }
       svg.appendChild(path);
     }
 
-    // Line for LOSER (Drops down to next bracket)
-    if (m.nextLoserId && elMap[m.nextLoserId]) {
-      const tRect = elMap[m.nextLoserId].getBoundingClientRect();
+    // Ищем следующий ВИДИМЫЙ матч проигравшего
+    const loseTargetId = getNextVisibleTarget(m.id, false);
+    if (loseTargetId && elMap[loseTargetId]) {
+      const tRect = elMap[loseTargetId].getBoundingClientRect();
       const endX = tRect.left - boardRect.left;
       const endY = tRect.top + tRect.height / 2 - boardRect.top;
 
-      const midX = startX + 35; // 35px out, pushes past the winner line
+      const midX = startX + 25; 
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute('d', `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`);
-      path.setAttribute('fill', 'transparent');
-      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('fill', 'transparent'); path.setAttribute('stroke-linejoin', 'round');
       
-      if (m.winner) { // Loser is decided when match gets a winner
-        path.setAttribute('stroke', '#c04444'); // Red
-        path.setAttribute('stroke-width', '2.5');
-      } else {
-        path.setAttribute('stroke', '#3a3632'); // Gray
-        path.setAttribute('stroke-width', '1.5');
-        path.setAttribute('stroke-dasharray', '4 4');
-      }
+      if (m.winner) { path.setAttribute('stroke', '#c04444'); path.setAttribute('stroke-width', '2.5'); } 
+      else { path.setAttribute('stroke', '#3a3632'); path.setAttribute('stroke-width', '1.5'); path.setAttribute('stroke-dasharray', '4 4'); }
       svg.appendChild(path);
     }
   });
 }
 
-// Redraw if window sizes change
 window.addEventListener('resize', () => { if (document.getElementById('tournament-view').style.display === 'block') drawConnectors(); });
 
 /* --- UTILS --- */
