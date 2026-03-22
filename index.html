@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tennis Tournament - Smart Gender Detection</title>
+<title>Tennis Tournament - KZ Smart Gender Detection</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -159,7 +159,6 @@
   <div class="tournament-header">
     <div class="tournament-title" id="tournamentTitle">TOURNAMENT</div>
     
-    <!-- Вкладки на экране турнира -->
     <div class="tabs-container" style="margin-left: 30px;">
       <button class="tab-btn active" id="tabTourMale" data-cat="male" onclick="switchTournamentView('male')">МУЖЧИНЫ</button>
       <button class="tab-btn" id="tabTourFemale" data-cat="female" onclick="switchTournamentView('female')">ЖЕНЩИНЫ</button>
@@ -191,11 +190,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-/* --- МАСТЕР-СПИСОК (ВСЕ ИГРОКИ) --- */
-// Хранит объекты: { name: "Иван Иванов", gender: "male" }
 let masterPlayers =[];
-
-/* --- ТУРНИРЫ --- */
 let activeCategory = 'male'; 
 const tourneys = {
   male: { players:[], matches: {}, finalResults: {}, tournamentSize: 0, densePlaceMap: {} },
@@ -204,28 +199,54 @@ const tourneys = {
 
 let matchCounter = 0; 
 
-/* --- АЛГОРИТМ УМНОГО РАСПОЗНАВАНИЯ ПОЛА --- */
+/* --- УМНЫЙ АЛГОРИТМ ПОЛА ДЛЯ КАЗАХСТАНА --- */
 function guessGender(fullName) {
   const name = fullName.trim().toLowerCase();
-  
-  // 1. Очевидные женские маркеры в фамилии/отчестве
-  if (/(ова|ева|ина|ая|кызы|қызы)$/i.test(name)) return 'female';
-  // 2. Очевидные мужские маркеры
-  if (/(ов|ев|ин|ий|улы|ұлы)$/i.test(name)) return 'male';
-  
-  // 3. Анализ имени (обычно первое слово)
   const parts = name.split(/\s+/);
+
+  // 1. Очевидные суффиксы и отчества (100% точность)
+  for (const part of parts) {
+    if (/(қызы|кызы|ова|ева|ина|ая)$/i.test(part)) return 'female';
+    if (/(ұлы|улы|ов|ев|ин|ий)$/i.test(part)) return 'male';
+  }
+
+  // 2. Специфичные казахские окончания имен (Мужчины / Женщины)
+  for (const part of parts) {
+    if (/(гүл|гуль|бике|шүкір)$/i.test(part)) return 'female';
+    if (/(бек|бай|хан|ғали|гали|тай|берді|берди|бол|ддин)$/i.test(part)) return 'male';
+    
+    // Окончание -жан (Чаще мужское, но есть конкретные женские имена)
+    if (/жан$/i.test(part)) {
+      if (/(айжан|аружан|балжан|гүлжан|гулжан|тоғжан|тогжан|маржан)$/i.test(part)) return 'female';
+      return 'male';
+    }
+  }
+
+  // 3. База популярных казахских имен без окончаний
+  for (const part of parts) {
+    const femaleNames =[
+      'асель', 'айгерим', 'меруерт', 'жұлдыз', 'жулдыз', 'ботагөз', 'ботагоз', 'қарлығаш', 'карлыгаш',
+      'салтанат', 'мақпал', 'макпал', 'камшат', 'перизат', 'айзат', 'шолпан', 'сымбат', 'арайлым',
+      'аяулым', 'назым', 'айнур', 'айнұр', 'баян', 'жібек', 'жибек', 'еңлік', 'енлик', 'динара',
+      'мадина', 'зарина', 'сабина', 'алуа', 'амина', 'айша', 'инкар', 'сезім', 'сезим', 'томирис'
+    ];
+    if (femaleNames.includes(part)) return 'female';
+
+    const maleNames =[
+      'али', 'әли', 'амир', 'әмір', 'ильяс', 'димаш', 'расул', 'арсен', 'алишер', 'рустам', 'тимур',
+      'дамир', 'мақсат', 'максат', 'дастан', 'азамат', 'қайрат', 'кайрат', 'мұстафа', 'мустафа',
+      'иса', 'мұса', 'муса', 'абдулла', 'хамза', 'закария', 'илья', 'никита', 'данила', 'кузьма'
+    ];
+    if (maleNames.includes(part)) return 'male';
+  }
+
+  // 4. Если ничего не сработало, берем первое/последнее слово и смотрим на "а" или "я"
+  // (Динара, Алина, Карина и тд попадут сюда)
   const firstName = parts[0];
-  
-  // Исключения мужских имен, оканчивающихся на "а/я"
-  const maleExceptions =['илья','никита','данила','кузьма','саша','женя','ваня','миша','леша','паша','рома','вова','юра','коля','вася','сережа'];
-  if (maleExceptions.includes(firstName)) return 'male';
-  
-  // Женские имена чаще всего оканчиваются на "а" или "я"
-  if (/[ая]$/i.test(firstName)) return 'female';
-  
-  // По умолчанию ставим "Мужчина"
-  return 'male';
+  if (/[аяя]$/i.test(firstName)) return 'female';
+  if (parts.length > 1 && /[аяя]$/i.test(parts[parts.length-1])) return 'female';
+
+  return 'male'; // По умолчанию Мужчина
 }
 
 /* --- SETUP & GSHEETS --- */
@@ -252,7 +273,7 @@ async function loadFromSheets() {
         added++; 
       } 
     });
-    renderPlayerList(); setSheetStatus(`✓ Загружено ${added} игроков (Авто-распределение пола завершено)`, 'ok');
+    renderPlayerList(); setSheetStatus(`✓ Загружено ${added} игроков (Авто-определение пола)`, 'ok');
   } catch (e) { setSheetStatus('✗ ' + e.message, 'err'); }
   btn.disabled = false;
 }
@@ -306,7 +327,7 @@ function renderPlayerList() {
   document.getElementById('generateBtn').disabled = !canGen;
 }
 
-/* --- ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК НА ЭКРАНЕ ТУРНИРА --- */
+/* --- ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ТУРНИРА --- */
 function switchTournamentView(cat) {
   activeCategory = cat;
   document.querySelectorAll('#tournament-view .tab-btn').forEach(btn => {
@@ -337,7 +358,6 @@ function newMatchId(cat) { return cat.charAt(0).toUpperCase() + (++matchCounter)
 function generateAllTournaments() {
   matchCounter = 0;
   
-  // Распределяем мастеров по турнирам
   tourneys.male.players = masterPlayers.filter(p => p.gender === 'male').map(p => p.name);
   tourneys.female.players = masterPlayers.filter(p => p.gender === 'female').map(p => p.name);
   
