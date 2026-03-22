@@ -3,14 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tennis Tournament - KZ Smart Gender Detection</title>
+<title>Tennis Tournament - Podium Results</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --clay: #c2714f; --clay-dark: #9e5a3a; --clay-light: #d4896a;
     --bg: #0e0d0b; --bg2: #1a1814; --bg3: #252220; --line: #2e2b28;
     --text: #e8e0d6; --text-dim: #7a7068; --win: #4caf6e; --lose: #c04444;
-    --bye: #4a4540; --gold: #d4a843; --accent-f: #a25bc2;
+    --bye: #4a4540; --gold: #d4a843; --silver: #c0c0c0; --bronze: #cd7f32;
+    --accent-f: #a25bc2;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; overflow-x: hidden; }
@@ -106,16 +107,38 @@
   .player-slot.waiting { color: var(--text-dim); font-style: italic; cursor: default; font-size: 0.75rem; }
   .slot-icon { font-size: 0.65rem; flex-shrink: 0; }
 
-  /* ── RESULTS ── */
-  .results-section { padding: 0 40px 40px; display: none; width: 100%; border-top: 1px dashed var(--line); margin-top: 40px; }
+  /* ── RESULTS & PODIUM ── */
+  .results-section { padding: 0 40px 60px; display: none; width: 100%; border-top: 1px dashed var(--line); margin-top: 40px; }
   .results-section.visible { display: block; }
-  .results-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: 3px; margin: 24px 0 16px; color: var(--text-dim); }
+  .results-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.2rem; letter-spacing: 3px; margin: 32px 0 24px; color: var(--text-dim); text-align: center; }
+  
+  /* Пьедестал (1-2-3 места) */
+  .podium-wrapper { display: flex; justify-content: center; align-items: flex-end; gap: 8px; margin-bottom: 40px; border-bottom: 2px solid var(--line); padding: 0 20px; }
+  .podium-item { display: flex; flex-direction: column; align-items: center; flex: 1; max-width: 140px; }
+  .podium-name { font-size: 0.95rem; font-weight: 500; text-align: center; margin-bottom: 8px; word-break: break-word; line-height: 1.2; padding: 0 4px; }
+  
+  .podium-base { width: 100%; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; border-radius: 8px 8px 0 0; border: 1px solid var(--line); border-bottom: none; position: relative; box-shadow: inset 0 20px 30px -10px rgba(0,0,0,0.5); }
+  .podium-medal { font-size: 2.2rem; margin-top: -20px; margin-bottom: 10px; background: var(--bg); border-radius: 50%; padding: 4px; box-shadow: 0 6px 12px rgba(0,0,0,0.6); }
+  .podium-rank { font-family: 'Bebas Neue', sans-serif; font-size: 3.5rem; line-height: 1; opacity: 0.8; }
+
+  .podium-1 .podium-base { height: 160px; background: linear-gradient(to bottom, rgba(212,168,67,0.15), var(--bg2)); border-color: rgba(212,168,67,0.4); }
+  .podium-1 .podium-rank { color: var(--gold); text-shadow: 0 0 15px rgba(212,168,67,0.4); }
+  .podium-1 .podium-name { color: var(--gold); font-size: 1.05rem; }
+
+  .podium-2 .podium-base { height: 120px; background: linear-gradient(to bottom, rgba(192,192,192,0.12), var(--bg2)); border-color: rgba(192,192,192,0.4); }
+  .podium-2 .podium-rank { color: var(--silver); text-shadow: 0 0 15px rgba(192,192,192,0.3); }
+
+  .podium-3 .podium-base { height: 90px; background: linear-gradient(to bottom, rgba(205,127,50,0.12), var(--bg2)); border-color: rgba(205,127,50,0.4); }
+  .podium-3 .podium-rank { color: var(--bronze); text-shadow: 0 0 15px rgba(205,127,50,0.3); }
+
+  .podium-2 { order: 1; }
+  .podium-1 { order: 2; z-index: 2; margin: 0 10px; }
+  .podium-3 { order: 3; }
+
+  /* Обычная таблица (4+ места) */
   .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
   .result-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
-  .result-place { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: var(--text-dim); min-width: 36px; line-height: 1; }
-  .result-card:nth-child(1) .result-place { color: var(--gold); }
-  .result-card:nth-child(2) .result-place { color: #aaa; }
-  .result-card:nth-child(3) .result-place { color: var(--clay); }
+  .result-place { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--text-dim); min-width: 30px; line-height: 1; }
   .result-name { font-size: 0.85rem; font-weight: 500; }
 
   /* TOAST */
@@ -182,8 +205,7 @@
   </div>
   
   <div id="resultsSection" class="results-section">
-    <div class="results-title">ИТОГОВАЯ ТАБЛИЦА</div>
-    <div class="results-grid" id="resultsGrid"></div>
+    <!-- Сюда динамически рендерится Подиум и Сетка -->
   </div>
 </div>
 
@@ -201,26 +223,20 @@ let matchCounter = 0;
 
 /* --- ИДЕАЛЬНЫЙ АЛГОРИТМ ПОЛА ДЛЯ КАЗАХСКИХ ИМЕН --- */
 function guessGender(fullName) {
-  // 1. Очистка от нумерации (например "1.", "2 ") и лишних пробелов
   let name = fullName.replace(/^\d+[\.\s]+/, '').trim().toLowerCase();
   
-  // 2. Если при копировании из Google Таблиц захватился столбец с полом ("Әйел", "Ер")
   if (name.includes('әйел') || name.includes('жен') || name.includes('девочка')) return 'female';
   if (name.includes('еркек') || name.includes('муж') || name.includes('мальчик') || name.endsWith('ер')) return 'male';
-  
-  // Стираем эти слова, чтобы они не мешали анализу самого имени
   name = name.replace(/\s+(әйел|еркек|жен|муж|девочка|мальчик|ер)$/i, '').trim();
 
   const parts = name.split(/\s+/);
   const firstName = parts[0];
 
-  // 3. Отчества и русские суффиксы в ЛЮБОМ слове (100% точность)
   for (const part of parts) {
     if (/(қызы|кызы|ова|ева|ина|ая)$/i.test(part)) return 'female';
     if (/(ұлы|улы|ов|ев|ин|ий)$/i.test(part)) return 'male';
   }
 
-  // 4. Огромная база специфичных женских имен (которые не подчиняются правилам)
   const femaleNames =[
     'асель', 'айгерим', 'әйгерім', 'меруерт', 'жұлдыз', 'жулдыз', 'ботагөз', 'ботагоз', 
     'қарлығаш', 'карлыгаш', 'салтанат', 'мақпал', 'макпал', 'камшат', 'перизат', 'айзат', 
@@ -234,7 +250,6 @@ function guessGender(fullName) {
   ];
   if (femaleNames.includes(firstName)) return 'female';
 
-  // Исключения мужских имен, оканчивающихся на "а" или "я"
   const maleExceptions =[
     'али', 'әли', 'амир', 'әмір', 'ильяс', 'димаш', 'расул', 'арсен', 'алишер', 'рустам', 
     'тимур', 'дамир', 'мақсат', 'максат', 'дастан', 'азамат', 'қайрат', 'кайрат', 'мұстафа', 
@@ -244,18 +259,12 @@ function guessGender(fullName) {
   ];
   if (maleExceptions.includes(firstName)) return 'male';
 
-  // 5. Анализ ТОЛЬКО ПЕРВОГО ИМЕНИ.
-  // ВАЖНО: Мы больше не ищем "-бек" или "-бай" в фамилии (ведь это имя отца девушки!)
   if (/(гүл|гуль|бике|шүкір|ерке)$/i.test(firstName)) return 'female';
-  if (/(лым|лім|рім|рим)$/i.test(firstName)) return 'female'; // Аяулым, Әйгерім
+  if (/(лым|лім|рім|рим)$/i.test(firstName)) return 'female'; 
   
-  // Если первое слово имеет мужской корень
   if (/(бек|бай|хан|ғали|гали|тай|берді|берди|бол|ддин)$/i.test(firstName)) return 'male';
 
-  // 6. Классические женские окончания "а" или "я"
   if (/[аяя]$/i.test(firstName)) return 'female';
-
-  // Если ничего не подошло — по умолчанию считаем мужчиной
   return 'male'; 
 }
 
@@ -278,14 +287,13 @@ async function loadFromSheets() {
     if (!names.length) throw new Error('Список пуст');
     let added = 0; 
     names.forEach(n => { 
-      // Убираем цифры если они прилипли при парсинге CSV
       const cleanName = n.replace(/^\d+[\.\s]+/, '').trim();
       if (!masterPlayers.find(p => p.name.toLowerCase() === cleanName.toLowerCase())) { 
         masterPlayers.push({ name: cleanName, gender: guessGender(cleanName) }); 
         added++; 
       } 
     });
-    renderPlayerList(); setSheetStatus(`✓ Загружено ${added} игроков (Авто-определение пола)`, 'ok');
+    renderPlayerList(); setSheetStatus(`✓ Загружено ${added} игроков`, 'ok');
   } catch (e) { setSheetStatus('✗ ' + e.message, 'err'); }
   btn.disabled = false;
 }
@@ -322,8 +330,6 @@ function renderPlayerList() {
     
     const genderLabel = p.gender === 'male' ? 'М' : 'Ж';
     const genderClass = p.gender === 'male' ? 'gender-m' : 'gender-f';
-    
-    // Очищаем имя от слова "Әйел" для красивого отображения, если оно прилипло
     let displayName = p.name.replace(/\s+(әйел|еркек|жен|муж)$/i, '');
 
     li.innerHTML = `
@@ -373,7 +379,6 @@ function newMatchId(cat) { return cat.charAt(0).toUpperCase() + (++matchCounter)
 function generateAllTournaments() {
   matchCounter = 0;
   
-  // При генерации передаем очищенные имена (без слова "Әйел" или цифр)
   tourneys.male.players = masterPlayers.filter(p => p.gender === 'male').map(p => p.name.replace(/\s+(әйел|еркек|жен|муж)$/i, ''));
   tourneys.female.players = masterPlayers.filter(p => p.gender === 'female').map(p => p.name.replace(/\s+(әйел|еркек|жен|муж)$/i, ''));
   
@@ -740,18 +745,80 @@ function updateProgress() {
 }
 
 function updateResults() {
-  const g = document.getElementById('resultsGrid'); const s = document.getElementById('resultsSection');
-  if (!g || !s) return;
+  const s = document.getElementById('resultsSection');
+  if (!s) return;
   const t = tourneys[activeCategory];
+  
   const pl = Object.keys(t.finalResults).map(Number).sort((a,b)=>a-b).filter(p => t.finalResults[p] !== 'BYE');
   if (!pl.length) { s.classList.remove('visible'); return; }
-  s.classList.add('visible'); g.innerHTML = '';
+  s.classList.add('visible'); 
+  
+  // Очищаем и добавляем заголовок
+  s.innerHTML = '<div class="results-title">ИТОГОВАЯ ТАБЛИЦА</div>';
+
+  // Собираем массив игроков с их реальными местами
+  const rankedPlayers =[];
   pl.forEach(p => {
-    const c = document.createElement('div'); c.className = 'result-card';
     const dRank = t.densePlaceMap ? t.densePlaceMap[p] : p;
-    c.innerHTML = `<div class="result-place">${dRank}</div><div class="result-name">${t.finalResults[p]} ${dRank===1?'🥇':dRank===2?'🥈':dRank===3?'🥉':''}</div>`;
-    g.appendChild(c);
+    rankedPlayers.push({ name: t.finalResults[p], rank: dRank });
   });
+
+  // Вытаскиваем топ-3
+  const top1 = rankedPlayers.find(p => p.rank === 1);
+  const top2 = rankedPlayers.find(p => p.rank === 2);
+  const top3 = rankedPlayers.find(p => p.rank === 3);
+
+  // Рендерим Пьедестал
+  if (top1 || top2 || top3) {
+    const podiumWrap = document.createElement('div');
+    podiumWrap.className = 'podium-wrapper';
+
+    // Второе место (слева)
+    if (top2) podiumWrap.innerHTML += `
+      <div class="podium-item podium-2">
+        <div class="podium-name">${top2.name}</div>
+        <div class="podium-base">
+          <div class="podium-medal">🥈</div>
+          <div class="podium-rank">2</div>
+        </div>
+      </div>`;
+
+    // Первое место (по центру)
+    if (top1) podiumWrap.innerHTML += `
+      <div class="podium-item podium-1">
+        <div class="podium-name">${top1.name}</div>
+        <div class="podium-base">
+          <div class="podium-medal">🥇</div>
+          <div class="podium-rank">1</div>
+        </div>
+      </div>`;
+
+    // Третье место (справа)
+    if (top3) podiumWrap.innerHTML += `
+      <div class="podium-item podium-3">
+        <div class="podium-name">${top3.name}</div>
+        <div class="podium-base">
+          <div class="podium-medal">🥉</div>
+          <div class="podium-rank">3</div>
+        </div>
+      </div>`;
+
+    s.appendChild(podiumWrap);
+  }
+
+  // Рендерим остальные места (4+)
+  const others = rankedPlayers.filter(p => p.rank >= 4);
+  if (others.length > 0) {
+    const grid = document.createElement('div');
+    grid.className = 'results-grid';
+    others.forEach(p => {
+      const c = document.createElement('div');
+      c.className = 'result-card';
+      c.innerHTML = `<div class="result-place">${p.rank}</div><div class="result-name">${p.name}</div>`;
+      grid.appendChild(c);
+    });
+    s.appendChild(grid);
+  }
 }
 
 function resetTournament() { 
