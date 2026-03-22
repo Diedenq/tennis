@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tennis Tournament - Smart Compact Grid</title>
+<title>Tennis Tournament - Dynamic Exact Ranks</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -78,7 +78,6 @@
     margin-bottom: 16px; display: inline-block; border-bottom: 1px dashed var(--line); padding-bottom: 4px;
   }
 
-  /* Grid structure */
   .section-row { display: flex; gap: 70px; }
   .round-col { width: 150px; display: flex; flex-direction: column; gap: 16px; justify-content: space-around; flex-shrink: 0; }
 
@@ -216,7 +215,7 @@ function renderPlayerList() {
   document.querySelector('#playerCount span').textContent = players.length; document.getElementById('generateBtn').disabled = players.length < 2;
 }
 
-/* --- TOURNAMENT LOGIC (COMPASS DRAW) --- */
+/* --- TOURNAMENT LOGIC --- */
 function nextPow2(n) { let p = 1; while (p < n) p <<= 1; return p; }
 let matchCounter = 0; function newMatchId() { return 'M' + (++matchCounter); }
 
@@ -224,7 +223,7 @@ function generateTournament() {
   matchCounter = 0; matches = {}; finalResults = {};
   const size = nextPow2(players.length); tournamentSize = size;
   
-  const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
+  const shuffledPlayers =[...players].sort(() => Math.random() - 0.5);
   const R1_matches =[];
   const doubleMatches = players.length - size / 2; 
   let pIdx = 0;
@@ -267,28 +266,97 @@ function generateTournament() {
   const round0 = createTopology(1, size, 0);
   for(let i = 0; i < size / 2; i++) { matches[round0[i]].p1 = shuffled[i * 2]; matches[round0[i]].p2 = shuffled[i * 2 + 1]; }
   
+  computeDenseRanks(); // <--- Магия расчета честных мест
   processAutoByes(); 
   renderTournament();
 }
 
-// ИСПРАВЛЕНО: Безопасное проталкивание BYE. Игнорирует "Ожидание...".
+// Высчитывает точные (сжатые) места для каждого матча и убирает "дыры" в цифрах
+function computeDenseRanks() {
+  const realPlayersCount = {};
+  Object.values(matches).forEach(m => realPlayersCount[m.id] = 0);
+
+  // Считаем сколько живых людей зашло в первые матчи
+  const round0Matches = Object.values(matches).filter(m => m.round === 0);
+  round0Matches.forEach(m => {
+    let count = 0;
+    if (m.p1 !== 'BYE') count++;
+    if (m.p2 !== 'BYE') count++;
+    realPlayersCount[m.id] = count;
+  });
+
+  // Прокидываем математику по всей сетке вниз
+  const maxRound = Math.log2(tournamentSize);
+  for (let r = 0; r <= maxRound; r++) {
+    const roundMatches = Object.values(matches).filter(m => m.round === r);
+    roundMatches.forEach(m => {
+      const count = realPlayersCount[m.id];
+      const winners = Math.min(count, 1);
+      const losers = Math.max(0, count - 1);
+      if (m.nextWinnerId) realPlayersCount[m.nextWinnerId] = (realPlayersCount[m.nextWinnerId] || 0) + winners;
+      if (m.nextLoserId) realPlayersCount[m.nextLoserId] = (realPlayersCount[m.nextLoserId] || 0) + losers;
+    });
+  }
+
+  // Собираем абсолютно все финальные места, которые физически займут люди (без пустышек)
+  const realPlacesSet = new Set();
+  Object.values(matches).forEach(m => {
+    if (m.isFinal) {
+      const c = realPlayersCount[m.id];
+      if (c >= 1) realPlacesSet.add(m.placeRange[0]);
+      if (c === 2) realPlacesSet.add(m.placeRange[1]);
+    }
+  });
+
+  // Преобразуем рваные цифры (например [1, 2, 33, 41]) в ровные (1, 2, 3, 4)
+  const realPlaces = Array.from(realPlacesSet).sort((a,b)=>a-b);
+  window.densePlaceMap = {};
+  realPlaces.forEach((p, i) => window.densePlaceMap[p] = i + 1);
+
+  // Записываем каждому матчу его локальный честный диапазон мест
+  function getReachable(mId) {
+    const m = matches[mId];
+    if (m.reachableDense) return m.reachableDense;
+    let res = [];
+    if (m.isFinal) {
+      const c = realPlayersCount[mId];
+      if (c >= 1) res.push(window.densePlaceMap[m.placeRange[0]]);
+      if (c === 2) res.push(window.densePlaceMap[m.placeRange[1]]);
+    } else {
+      if (m.nextWinnerId) res.push(...getReachable(m.nextWinnerId));
+      if (m.nextLoserId) res.push(...getReachable(m.nextLoserId));
+    }
+    m.reachableDense = res;
+    return res;
+  }
+
+  Object.values(matches).forEach(m => {
+    const places = getReachable(m.id);
+    if (places.length > 0) {
+      m.denseMin = Math.min(...places);
+      m.denseMax = Math.max(...places);
+    } else {
+      m.denseMin = 0;
+      m.denseMax = 0;
+    }
+  });
+}
+
 function processAutoByes() {
   let changed = true;
   while (changed) {
     changed = false;
     Object.values(matches).forEach(m => {
-      if (m.winner) return; // Пропускаем завершенные
+      if (m.winner) return; 
       
       const hasBye = m.p1 === 'BYE' || m.p2 === 'BYE';
-      const hasWaiting = m.p1 === '?' || m.p2 === '?'; // Есть неопределившийся игрок
+      const hasWaiting = m.p1 === '?' || m.p2 === '?'; 
 
       if (hasBye) {
         if (m.p1 === 'BYE' && m.p2 === 'BYE') {
-          // BYE против BYE -> проходит BYE
           resolveMatch(m.id, 'BYE', true);
           changed = true;
         } else if (!hasWaiting) {
-          // Игрок против BYE (Только если оба известны, и нет "?") -> проходит Игрок
           let winner = m.p1 === 'BYE' ? m.p2 : m.p1;
           resolveMatch(m.id, winner, true);
           changed = true;
@@ -311,7 +379,6 @@ function resolveMatch(matchId, winner, silent = false) {
   }
 }
 
-// ИСПРАВЛЕНО: Теперь AutoByes вызывается после каждого клика
 function clickPlayer(matchId, slot) {
   const m = matches[matchId]; if (!m || m.winner) { if(m.winner) showToast('Матч завершён'); return; }
   const cName = slot === 1 ? m.p1 : m.p2; const oName = slot === 1 ? m.p2 : m.p1;
@@ -319,10 +386,8 @@ function clickPlayer(matchId, slot) {
   if (cName === 'BYE') return;
   
   resolveMatch(matchId, cName); 
-  processAutoByes(); // <--- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ. Двигает BYE в реальном времени.
-  
-  renderBracket(); 
-  updateProgress();
+  processAutoByes(); 
+  renderBracket(); updateProgress();
 }
 
 /* --- MEGA GRID RENDER --- */
@@ -367,7 +432,6 @@ function renderBracket() {
     }
     const secMatches = Array.from(sectionMatchesSet);
     
-    // ОТСЕЧЕНИЕ: Рисуем только сетки, где есть шанс реальной игры (не только BYE)
     const isPlayable = secMatches.some(m => m.p1 !== 'BYE' && m.p2 !== 'BYE');
     if (isPlayable) {
       sections.push({ matches: secMatches, minPlace: startingMatches[0].placeRange[0], maxPlace: startingMatches[0].placeRange[1] });
@@ -377,9 +441,17 @@ function renderBracket() {
   sections.sort((a, b) => a.minPlace - b.minPlace);
 
   sections.forEach(sec => {
+    // Используем расчетные Dense-места для заголовков
+    const validDenseMins = sec.matches.map(m => m.denseMin).filter(x => x > 0);
+    const validDenseMaxs = sec.matches.map(m => m.denseMax).filter(x => x > 0);
+    if (validDenseMins.length === 0) return;
+
+    const dMin = Math.min(...validDenseMins);
+    const dMax = Math.max(...validDenseMaxs);
+
     const secDiv = document.createElement('div'); secDiv.className = 'bracket-section';
     const title = document.createElement('div'); title.className = 'section-title-compact';
-    title.textContent = `Матчи за ${sec.minPlace}-${sec.maxPlace} места`;
+    title.textContent = `Матчи за ${dMin}${dMin !== dMax ? '-' + dMax : ''} места`;
     secDiv.appendChild(title);
 
     const rowDiv = document.createElement('div'); rowDiv.className = 'section-row';
@@ -403,13 +475,13 @@ function buildMatchCard(m) {
   const card = document.createElement('div'); card.className = 'match-card'; card.dataset.id = m.id;
   
   if (m.winner) card.classList.add('done'); 
-  
-  if (m.p1 === 'BYE' || m.p2 === 'BYE') {
-      card.classList.add('hide-bye-match');
-  }
+  if (m.p1 === 'BYE' || m.p2 === 'BYE') card.classList.add('hide-bye-match');
 
-  let html = `<div class="match-header"><span class="m-id">${m.id}</span><span>За ${m.placeRange[0]}${m.placeRange[0] !== m.placeRange[1] ? '-'+m.placeRange[1] : ''}</span></div>`;
-  [1, 2].forEach(slot => {
+  const dMin = m.denseMin || 0;
+  const dMax = m.denseMax || 0;
+  let rankText = dMin > 0 ? `За ${dMin}${dMin !== dMax ? '-'+dMax : ''}` : '';
+
+  let html = `<div class="match-header"><span class="m-id">${m.id}</span><span>${rankText}</span></div>`;[1, 2].forEach(slot => {
     const name = slot === 1 ? m.p1 : m.p2;
     html += `<div class="player-slot ${name === '?' ? 'waiting' : m.winner === name ? 'winner' : m.loser === name ? 'loser' : ''}" onclick="clickPlayer('${m.id}', ${slot})">`;
     if (name === '?') html += `<span>Ожидание...</span>`;
@@ -421,17 +493,12 @@ function buildMatchCard(m) {
 }
 
 /* --- SVG ORTHOGONAL LINES --- */
-// ИСПРАВЛЕНО: Умный поиск цели. Линии будут проходить скрытые матчи насквозь!
 function getNextVisibleTarget(startMatchId, isWinnerPath) {
   let nextId = isWinnerPath ? matches[startMatchId].nextWinnerId : matches[startMatchId].nextLoserId;
   while (nextId) {
     let nextMatch = matches[nextId];
     if (!nextMatch) return null;
-    // Если матч реален (ни один из слотов не BYE), то мы нашли цель для отрисовки линии
     if (nextMatch.p1 !== 'BYE' && nextMatch.p2 !== 'BYE') return nextId;
-    
-    // Если матч - пустышка, значит пришедший в него человек автоматически его выиграл. 
-    // Продолжаем искать линию дальше по пути победителя.
     nextId = nextMatch.nextWinnerId;
   }
   return null;
@@ -468,7 +535,6 @@ function drawConnectors() {
     const startX = startRect.right - boardRect.left;
     const startY = startRect.top + startRect.height / 2 - boardRect.top;
 
-    // Ищем следующий ВИДИМЫЙ матч победителя
     const winTargetId = getNextVisibleTarget(m.id, true);
     if (winTargetId && elMap[winTargetId]) {
       const tRect = elMap[winTargetId].getBoundingClientRect();
@@ -485,7 +551,6 @@ function drawConnectors() {
       svg.appendChild(path);
     }
 
-    // Ищем следующий ВИДИМЫЙ матч проигравшего
     const loseTargetId = getNextVisibleTarget(m.id, false);
     if (loseTargetId && elMap[loseTargetId]) {
       const tRect = elMap[loseTargetId].getBoundingClientRect();
@@ -522,7 +587,11 @@ function updateResults() {
   s.classList.add('visible'); g.innerHTML = '';
   pl.forEach(p => {
     const c = document.createElement('div'); c.className = 'result-card';
-    c.innerHTML = `<div class="result-place">${p}</div><div class="result-name">${finalResults[p]} ${p===1?'🥇':p===2?'🥈':p===3?'🥉':''}</div>`;
+    
+    // Используем сжатые красивые номера для итоговой таблицы
+    const dRank = window.densePlaceMap ? window.densePlaceMap[p] : p;
+    
+    c.innerHTML = `<div class="result-place">${dRank}</div><div class="result-name">${finalResults[p]} ${dRank===1?'🥇':dRank===2?'🥈':dRank===3?'🥉':''}</div>`;
     g.appendChild(c);
   });
 }
