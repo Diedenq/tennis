@@ -69,6 +69,8 @@
   .sheets-status.ok { color: var(--win); } .sheets-status.err { color: var(--lose); }
   .btn-reset { background: transparent; color: var(--text-dim); border: 1px solid var(--line); padding: 10px 20px; font-size: 0.8rem; letter-spacing: 1px; }
   .btn-reset:hover { color: var(--text); border-color: var(--text-dim); }
+  .btn-export-csv { background: transparent; color: var(--win); border: 1px solid var(--win); padding: 10px 20px; font-size: 0.8rem; letter-spacing: 1px; }
+  .btn-export-csv:hover { background: rgba(76,175,110,0.15); }
 
   /* ── TOURNAMENT VIEW ── */
   #tournament-view { display: none; }
@@ -188,6 +190,7 @@
     </div>
 
     <div style="margin-left:auto; display:flex; gap:8px;">
+      <button class="btn btn-export-csv" onclick="exportResultsCSV()">↓ СКАЧАТЬ CSV</button>
       <button class="btn btn-reset" onclick="resetTournament()">← НАСТРОЙКИ</button>
     </div>
   </div>
@@ -819,6 +822,38 @@ function updateResults() {
     });
     s.appendChild(grid);
   }
+}
+
+function exportResultsCSV() {
+  const categories = ['male', 'female'];
+  const catLabels = { male: 'Мужчины', female: 'Женщины' };
+  let rows = [['Категория', 'Место', 'Игрок']];
+
+  categories.forEach(cat => {
+    const t = tourneys[cat];
+    const pl = Object.keys(t.finalResults).map(Number).sort((a,b) => a-b).filter(p => t.finalResults[p] !== 'BYE');
+    if (!pl.length) return;
+    pl.forEach(p => {
+      const dRank = t.densePlaceMap ? (t.densePlaceMap[p] || p) : p;
+      const name = t.finalResults[p];
+      rows.push([catLabels[cat], dRank, name]);
+    });
+  });
+
+  if (rows.length <= 1) { showToast('Нет результатов для экспорта'); return; }
+
+  const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const bom = '\uFEFF'; // UTF-8 BOM для корректного открытия в Excel
+  const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tournament_results.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('✓ CSV сохранён');
 }
 
 function resetTournament() { 
