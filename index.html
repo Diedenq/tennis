@@ -559,13 +559,13 @@ async function fetchCSV(url) {
 
 function parseCSVNames(csv) {
   const lines = csv.trim().split('\n').map(l => l.trim()).filter(Boolean);
-  // Skip header row if first cell looks like a header (non-name text)
-  const start = /^(аты|имя|name|#|no)/i.test(lines[0]) ? 1 : 0;
-  return lines.slice(start)
+  // Always skip first row (header: "Аты, тегі")
+  return lines.slice(1)
     .map(line => {
-      // CSV: first column is the full name (r[0])
-      const cols = line.split(',');
-      return cols[0].replace(/^"|"$/g, '').trim();
+      // Split CSV respecting quoted fields
+      const cols = line.match(/(".*?"|[^,]+)(?=,|$)/g) || [line];
+      const name = cols[0].replace(/^"|"$/g, '').trim();
+      return name;
     })
     .filter(n => n.length > 0);
 }
