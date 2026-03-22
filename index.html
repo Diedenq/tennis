@@ -559,8 +559,8 @@ async function fetchCSV(url) {
 
 function parseCSVNames(csv) {
   const lines = csv.trim().split('\n').map(l => l.trim()).filter(Boolean);
-  // Skip 2 rows: row1 = sheet header, row2 = header pulled in by FILTER from base!A1
-  return lines.slice(2)
+  // Skip only row 1 — the sheet header "Аты, тегі"
+  return lines.slice(1)
     .map(line => {
       // Split CSV respecting quoted fields
       const cols = line.match(/(".*?"|[^,]+)(?=,|$)/g) || [line];
