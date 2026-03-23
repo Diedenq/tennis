@@ -104,8 +104,10 @@
   .player-slot { padding: 6px 10px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 28px; }
   .player-slot:first-of-type { border-bottom: 1px solid var(--line); }
   .player-slot:hover:not(.waiting):not(.winner):not(.loser) { background: rgba(194,113,79,0.15); }
-  .player-slot.winner { background: rgba(76,175,110,0.15); color: var(--win); cursor: default; }
-  .player-slot.loser { background: rgba(192,68,68,0.1); color: var(--text-dim); text-decoration: line-through; cursor: default; }
+  .player-slot.winner { background: rgba(76,175,110,0.15); color: var(--win); cursor: pointer; transition: 0.2s; }
+  .player-slot.winner:hover { background: rgba(76,175,110,0.25); }
+  .player-slot.loser { background: rgba(192,68,68,0.1); color: var(--text-dim); text-decoration: line-through; cursor: pointer; transition: 0.2s; }
+  .player-slot.loser:hover { background: rgba(192,68,68,0.2); }
   .player-slot.waiting { color: var(--text-dim); font-style: italic; cursor: default; font-size: 0.75rem; }
   .slot-icon { font-size: 0.65rem; flex-shrink: 0; }
 
@@ -117,15 +119,17 @@
   /* Пьедестал (1-2-3 места) */
   .podium-wrapper { display: flex; justify-content: center; align-items: flex-end; gap: 8px; margin-bottom: 40px; border-bottom: 2px solid var(--line); padding: 0 20px; }
   .podium-item { display: flex; flex-direction: column; align-items: center; flex: 1; max-width: 140px; }
+  
+  /* ОБНОВЛЕННЫЙ КЛАСС: Отступ увеличен до 28px, добавлен z-index */
   .podium-name { 
     font-size: 0.95rem; 
     font-weight: 500; 
     text-align: center; 
-    margin-bottom: 28px; /* Увеличили отступ (было 8px) */
+    margin-bottom: 28px; 
     word-break: break-word; 
     line-height: 1.2; 
     padding: 0 4px; 
-    position: relative; /* Гарантирует, что текст всегда будет поверх элементов */
+    position: relative; 
     z-index: 10;
   }
   
@@ -291,7 +295,7 @@ async function fetchCSV(url) {
   for (const proxy of PROXIES) { try { const res = await fetch(proxy(cb), { signal: AbortSignal.timeout(7000) }); if (!res.ok) continue; const text = await res.text(); if (text.length > 5) return text; } catch (e) {} }
   throw new Error('Все прокси недоступны');
 }
-function parseCSVNames(csv) { return csv.trim().split('\n').slice(1).map(l => (l.match(/(".*?"|[^,]+)(?=,|$)/g) || [l])[0].replace(/^"|"$/g, '').trim()).filter(Boolean); }
+function parseCSVNames(csv) { return csv.trim().split('\n').slice(1).map(l => (l.match(/(".*?"|[^,]+)(?=,|$)/g) ||[l])[0].replace(/^"|"$/g, '').trim()).filter(Boolean); }
 
 async function loadFromSheets() {
   const btn = document.getElementById('sheetsBtn'); btn.disabled = true; setSheetStatus('Загрузка...', 'loading');
@@ -558,16 +562,79 @@ function resolveMatch(cat, matchId, winner, silent = false) {
   }
 }
 
+/* --- ФУНКЦИЯ ДЛЯ БЕЗОПАСНОГО СБРОСА МАТЧА И ЗАВИСИМОСТЕЙ --- */
+function revertMatchAndDownstream(cat, matchId) {
+  const t = tourneys[cat];
+  const m = t.matches[matchId];
+  if (!m || !m.winner) return;
+
+  const oldWinner = m.winner;
+  const oldLoser = m.loser;
+
+  // Сбрасываем текущий матч
+  m.winner = null;
+  m.loser = null;
+
+  if (m.isFinal) {
+    delete t.finalResults[m.placeRange[0]];
+    delete t.finalResults[m.placeRange[1]];
+  }
+
+  // Рекурсивно очищаем игроков из следующих матчей
+  function clearPlayerFromNext(nextMatchId, playerToRemove) {
+    if (!nextMatchId) return;
+    const nm = t.matches[nextMatchId];
+    if (!nm) return;
+    
+    // Если игрок уже прошел дальше, убираем его
+    if (nm.p1 === playerToRemove || nm.p2 === playerToRemove) {
+      if (nm.winner) {
+        revertMatchAndDownstream(cat, nextMatchId); // Если следующий матч сыгран, сбрасываем и его
+      }
+      if (nm.p1 === playerToRemove) nm.p1 = '?';
+      if (nm.p2 === playerToRemove) nm.p2 = '?';
+    }
+  }
+
+  clearPlayerFromNext(m.nextWinnerId, oldWinner);
+  clearPlayerFromNext(m.nextLoserId, oldLoser);
+}
+
+/* --- ОБНОВЛЕННЫЙ КЛИК ПО ИГРОКУ --- */
 function clickPlayer(matchId, slot) {
   const t = tourneys[activeCategory];
-  const m = t.matches[matchId]; if (!m || m.winner) { if(m.winner) showToast('Матч завершён'); return; }
-  const cName = slot === 1 ? m.p1 : m.p2; const oName = slot === 1 ? m.p2 : m.p1;
+  const m = t.matches[matchId]; 
+  if (!m) return;
+  
+  const cName = slot === 1 ? m.p1 : m.p2; 
+  const oName = slot === 1 ? m.p2 : m.p1;
+  
   if (cName === '?' || oName === '?') return showToast('⏳ Ожидание игроков');
   if (cName === 'BYE') return;
   
+  // ЕСЛИ МАТЧ УЖЕ БЫЛ СЫГРАН
+  if (m.winner) { 
+    if (m.winner === cName) {
+      // Кликнули на того же победителя -> просто отменяем матч
+      revertMatchAndDownstream(activeCategory, matchId);
+      showToast('Матч сброшен');
+    } else {
+      // Кликнули на проигравшего -> меняем победителя
+      revertMatchAndDownstream(activeCategory, matchId);
+      resolveMatch(activeCategory, matchId, cName);
+      showToast('Победитель изменён');
+    }
+    processAutoByes(activeCategory); // пересчитываем авто-проходы
+    renderBracket(); 
+    updateProgress();
+    return;
+  }
+  
+  // ОБЫЧНЫЙ КЛИК (Матч играется впервые)
   resolveMatch(activeCategory, matchId, cName); 
   processAutoByes(activeCategory); 
-  renderBracket(); updateProgress();
+  renderBracket(); 
+  updateProgress();
 }
 
 /* --- MEGA GRID RENDER --- */
@@ -835,7 +902,7 @@ function updateResults() {
 }
 
 function exportResultsCSV() {
-  const categories = ['male', 'female'];
+  const categories =['male', 'female'];
   const catLabels = { male: 'Мужчины', female: 'Женщины' };
   let rows = [['Категория', 'Место', 'Игрок']];
 
