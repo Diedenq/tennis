@@ -292,7 +292,17 @@ const PROXIES =[ u => `https://corsproxy.io/?${encodeURIComponent(u)}`, u => `ht
 function setSheetStatus(msg, cls) { const el = document.getElementById('sheetsStatus'); el.className = 'sheets-status ' + cls; el.textContent = msg; }
 async function fetchCSV(url) {
   const cb = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
-  for (const proxy of PROXIES) { try { const res = await fetch(proxy(cb), { signal: AbortSignal.timeout(7000) }); if (!res.ok) continue; const text = await res.text(); if (text.length > 5) return text; } catch (e) {} }
+  for (const proxy of PROXIES) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+      const res = await fetch(proxy(cb), { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const text = await res.text();
+      if (text.length > 5) return text;
+    } catch (e) {}
+  }
   throw new Error('Все прокси недоступны');
 }
 function parseCSVNames(csv) { return csv.trim().split('\n').slice(1).map(l => (l.match(/(".*?"|[^,]+)(?=,|$)/g) ||[l])[0].replace(/^"|"$/g, '').trim()).filter(Boolean); }
